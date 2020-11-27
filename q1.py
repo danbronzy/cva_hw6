@@ -9,7 +9,6 @@ import numpy as np
 from skimage.io import imread
 from skimage.color import rgb2xyz
 from matplotlib import pyplot as plt
-from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
@@ -47,10 +46,26 @@ def renderNDotLSphere(center, rad, light, pxSize, res):
     image : numpy.ndarray
         The rendered image of the sphere
     """
+    #assuming res is [width, height]
+    width, height = res
 
-    image = None
+    x = np.arange(width)
+    y = np.arange(height)
+    X, Y = np.meshgrid(x, y)
+
+    X = pxSize * (X - width/2)
+    Y = -pxSize * (Y - height/2)
+
+    dists = np.sqrt((X - center[0])**2 + (Y - center[1])**2)
+    Z = np.where(dists <= rad, np.sqrt(np.clip(rad**2 - dists**2,0,None)), 0)
+
+    diffs = np.dstack((X, Y, Z)) - center.reshape((1,1,3))
+    norms = np.linalg.norm(diffs, axis = 2)
+    norms = np.dstack((norms, norms, norms))
+    ns = diffs / norms
+    image = np.where(dists <= rad, np.clip(np.dot(ns, light), 0, None), 0)
+
     return image
-
 
 def loadData(path = "../data/"):
 
@@ -79,9 +94,20 @@ def loadData(path = "../data/"):
 
     """
 
-    I = None
-    L = None
-    s = None
+    im = [str(x) for x in range(1,8)]
+    I = []
+    for i in im:
+        arr = imread(path + 'input_{}.tif'.format(i)).astype(np.uint16)
+        arr = rgb2xyz(arr)[:,:,1]
+        s = arr.shape
+        I.append(arr.flatten())
+
+    I = np.array(I)
+
+    L = np.load(path + 'sources.npy').T
+
+    _, sv, _ = np.linalg.svd(I, full_matrices=False)
+    print("I matrix singular values:\n\t{}".format(sv))
 
     return I, L, s
 
@@ -108,7 +134,11 @@ def estimatePseudonormalsCalibrated(I, L):
         The 3 x P matrix of pesudonormals
     """
 
-    B = None
+    S = L.T
+
+    #moore pensore pseudoinverse
+    B = np.linalg.inv(S.T @ S) @ S.T @ I
+
     return B
 
 
@@ -133,8 +163,12 @@ def estimateAlbedosNormals(B):
         The 3 x P matrix of normals
     '''
 
-    albedos = None
-    normals = None
+    #albedo
+    albedos = np.linalg.norm(B, axis = 0)
+
+    #unit normals
+    normals = B / albedos
+
     return albedos, normals
 
 
@@ -159,7 +193,7 @@ def displayAlbedosNormals(albedos, normals, s):
     s : tuple
         Image shape
 
-    Returns
+    Returns\
     -------
     albedoIm : numpy.ndarray
         Albedo image of shape s
@@ -169,8 +203,15 @@ def displayAlbedosNormals(albedos, normals, s):
 
     """
 
-    albedoIm = None
-    normalIm = None
+    #albedo
+    albedoIm = albedos.reshape(s)
+    plt.imshow(albedoIm, cmap='gray')
+    plt.show()
+
+    #unit normals
+    normalIm = normals.T.reshape((s[0],s[1],3))
+    plt.imshow((1 + normalIm)/2, cmap='rainbow')
+    plt.show()
 
     return albedoIm, normalIm
 
@@ -198,7 +239,11 @@ def estimateShape(normals, s):
 
     """
 
-    surface = None
+    zx = (-normals[0,:]/normals[2,:]).reshape(s)
+    zy = (-normals[1,:]/normals[2,:]).reshape(s)
+
+    surface = integrateFrankot(zx, zy)
+
     return surface
 
 
@@ -219,11 +264,52 @@ def plotSurface(surface):
         None
 
     """
+    f = plt.figure()
+    ax = f.gca(projection='3d')
+    x = np.arange(surface.shape[1])
+    y = np.arange(surface.shape[0])
+    X, Y = np.meshgrid(x, y)
 
-    pass
-
+    ax.plot_surface(X, Y, -surface, cmap=cm.coolwarm,
+                       linewidth=0, antialiased=False)
+    
+    plt.show()
 
 if __name__ == '__main__':
 
-    # Put your main code here
-    pass
+    I, L, s = loadData()
+    B = estimatePseudonormalsCalibrated(I, L)
+
+    albedos, normals = estimateAlbedosNormals(B)
+    albedosIm, normalsIm = displayAlbedosNormals(albedos, normals, s)
+
+    surface = estimateShape(normals, s)
+    plotSurface(surface)
+    #Question 1b
+    if True:
+        sphere1 = renderNDotLSphere(np.array([0, 0, 0]), .0075, 
+            np.array([ 1, 1,1])/np.sqrt(3), 7e-6, [3840, 2160])
+        sphere2 = renderNDotLSphere(np.array([0, 0, 0]), .0075, 
+            np.array([ 1,-1,1])/np.sqrt(3), 7e-6, [3840, 2160])
+        sphere3 = renderNDotLSphere(np.array([0, 0, 0]), .0075, 
+            np.array([-1,-1,1])/np.sqrt(3), 7e-6, [3840, 2160])
+        plt.imshow(sphere1, cmap='gray')
+        plt.show()
+        plt.imshow(sphere2, cmap='gray')
+        plt.show()
+        plt.imshow(sphere3, cmap='gray')
+        plt.show()
+
+    #question 1h
+    if True:
+        g = np.array(range(1,17)).reshape((4,4))
+        gx = np.diff(g, axis = 1)
+        gy = np.diff(g, axis = 0)
+        g11 = 1
+        g1r = np.hstack((g11, g11 + np.cumsum(gx, axis = 1)[0,:]))
+        g1 = np.vstack((g1r, g1r + np.cumsum(gy, axis = 0)))
+        print("First row, then cols:\n{}".format(g1))
+
+        g2c = np.vstack((g11, g11 + np.cumsum(gy, axis = 0)[:,0].reshape(3,1)))
+        g2 = np.hstack((g2c, g2c + np.cumsum(gx, axis = 1)))
+        print("First col, then rows:\n{}".format(g2))
