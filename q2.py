@@ -50,20 +50,25 @@ if __name__ == "__main__":
     print(L)
     print(realL)
 
-    albedos, normals = estimateAlbedosNormals(B)
+    _, normalsBad = estimateAlbedosNormals(B)
 
-    displayAlbedosNormals(albedos, normals, s)
+    BI = enforceIntegrability(B, s)
 
-    surf1 = estimateShape(normals, s)
-    surf2 = estimateShape(enforceIntegrability(normals, s), s)
-    plotSurface(np.clip(surf1, -600, 800))
-    plotSurface(surf2)
+    # albedos, normals = estimateAlbedosNormals(BI)
+
+    # displayAlbedosNormals(albedos, normals, s)
+
+    # surf1 = estimateShape(normalsBad, s)
+    # surf2 = estimateShape(normals, s)
+    # plotSurface(np.clip(surf1, -1000, 1000))
+    # plotSurface(surf2)
 
     G = np.eye(3)
     G[2,2] = 0
-    G[2,:] = [0,0,1]
+    G[2,:] = [10,0,.7]
     Ginv = np.linalg.inv(G)
-    B1  = Ginv @ B
-    albedos, normals = estimateAlbedosNormals(B1)
-    surf = estimateShape(enforceIntegrability(normals, s), s)
+
+    Bnew  = Ginv.T @ BI
+    _, normals = estimateAlbedosNormals(Bnew)
+    surf = estimateShape(normals, s)
     plotSurface(surf)
